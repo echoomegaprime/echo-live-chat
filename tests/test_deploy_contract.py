@@ -51,6 +51,7 @@ def test_deploy_is_staging_first_and_has_real_rollback() -> None:
         "EXPECTED_STRICT_SHA=08b06de2",
         'git -c safe.directory="$SRC_DIR" -C "$SRC_DIR" diff --quiet',
         'git -c safe.directory="$SRC_DIR" -C "$SRC_DIR" archive --format=tar HEAD',
+        '(cd "$RELEASE_DIR" && "$TEST_PYTHON" -m pytest',
         'wait_for_health "$PROD_PORT" || return 1',
         '--admin-token-file "$ADMIN_TOKEN_FILE"',
         "PUBLIC_BASE=https://live-chat.echo-op.com",

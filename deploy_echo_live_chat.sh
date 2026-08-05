@@ -149,7 +149,7 @@ mkdir -m 0755 "$RELEASE_DIR"
 git -c safe.directory="$SRC_DIR" -C "$SRC_DIR" archive --format=tar HEAD | tar -xf - -C "$RELEASE_DIR"
 chmod -R u=rwX,go=rX "$RELEASE_DIR"
 python3 -c "import glob,py_compile; [py_compile.compile(path,doraise=True) for path in glob.glob('$RELEASE_DIR/*.py')]"
-"$TEST_PYTHON" -m pytest -q --confcutdir="$RELEASE_DIR" "$RELEASE_DIR/tests"
+(cd "$RELEASE_DIR" && "$TEST_PYTHON" -m pytest -q --confcutdir="$RELEASE_DIR" tests)
 python3 -m venv "$RELEASE_DIR/.venv"
 PIP_CACHE_DIR="$BASE_DIR/pip-cache" "$RELEASE_DIR/.venv/bin/python" -m pip install \
   --disable-pip-version-check --no-input --only-binary=:all: \
