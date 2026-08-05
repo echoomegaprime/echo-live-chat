@@ -1,0 +1,50 @@
+[Unit]
+Description=Echo Live Chat private-cluster API
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=echo-live-chat
+Group=echo-live-chat
+WorkingDirectory=/opt/echo-live-chat-runtime
+Environment="ECHO_LIVE_CHAT_DATABASE_DSN=dbname=echo user=echo-live-chat"
+Environment=ECHO_LIVE_CHAT_ADMIN_TOKEN_FILE=%d/admin_token
+Environment=ECHO_LIVE_CHAT_SESSION_KEY_FILE=%d/session_key
+Environment=ECHO_LIVE_CHAT_STRIPE_API_SECRET_FILE=%d/stripe_api_secret
+Environment=ECHO_LIVE_CHAT_STRIPE_WEBHOOK_SECRET_FILE=%d/stripe_webhook_secret
+Environment=ECHO_LIVE_CHAT_CORS_ORIGINS=https://echo-op.com,https://www.echo-op.com
+Environment=ECHO_LIVE_CHAT_ENGINE_URL=http://127.0.0.1:8160/complete
+Environment=ECHO_LIVE_CHAT_BRAIN_URL=http://127.0.0.1:8160/answer
+Environment=PUBLIC_BASE_URL=https://live-chat.echo-op.com
+Environment=ECHO_LIVE_CHAT_REQUEST_TIMEOUT=8
+Environment=ECHO_LIVE_CHAT_ADMIN_RATE_LIMIT=120
+Environment=ECHO_LIVE_CHAT_VISITOR_RATE_LIMIT=30
+LoadCredential=admin_token:/etc/echo/credentials/echo-live-chat/admin-token
+LoadCredential=session_key:/etc/echo/credentials/echo-live-chat/session-key
+LoadCredential=stripe_api_secret:/etc/echo/credentials/echo-live-chat/stripe-api-secret
+LoadCredential=stripe_webhook_secret:/etc/echo/credentials/echo-live-chat/stripe-webhook-secret
+ExecStart=/usr/bin/env /opt/echo-live-chat-runtime/.venv/bin/python -m uvicorn app:app --host 127.0.0.1 --port 8465 --log-level info --no-access-log
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=30
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=tmpfs
+BindReadOnlyPaths=/home/forge/echo-live-chat/current:/opt/echo-live-chat-runtime
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=true
+MemoryMax=384M
+MemoryHigh=320M
+CPUWeight=75
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target
