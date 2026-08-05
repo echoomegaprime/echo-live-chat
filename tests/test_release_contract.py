@@ -93,3 +93,9 @@ def test_recovered_state_contract_preserves_the_single_widget() -> None:
     assert recovery["indexed_nonempty_application_exports"] == 1
     assert recovery["recovered_payload_rows"] == 1
     assert "legacy_*_text_v1" in recovery["policy"]
+
+
+def test_smoke_uses_canonical_widget_route_placeholders() -> None:
+    smoke = (ROOT / "smoke_live.py").read_text(encoding="utf-8")
+    assert 'contract_path="/widgets/{{}}"' not in smoke
+    assert smoke.count('contract_path="/widgets/{}"') == 4

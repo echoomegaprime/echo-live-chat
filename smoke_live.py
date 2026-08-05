@@ -250,7 +250,7 @@ def run(base: str, admin_token: str) -> dict[str, Any]:
         client.request("GET", "/visitors", contract_path="/visitors", headers=admin)
         client.request("GET", "/widgets", contract_path="/widgets", headers=admin)
         client.request(
-            "GET", f"/widgets/{widget_id}", contract_path="/widgets/{{}}", headers=admin
+            "GET", f"/widgets/{widget_id}", contract_path="/widgets/{}", headers=admin
         )
         script = client.request(
             "GET",
@@ -275,7 +275,7 @@ def run(base: str, admin_token: str) -> dict[str, Any]:
         client.request(
             "GET",
             f"/widgets/{widget_id}",
-            contract_path="/widgets/{{}}",
+            contract_path="/widgets/{}",
             headers=client.admin_headers(other_tenant_id),
             expected=(404,),
         )
