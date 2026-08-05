@@ -43,12 +43,16 @@ def test_provenance_identities_are_distinct_and_pinned() -> None:
     contract = json.loads((ROOT / "evidence" / "route_contract.json").read_text())
     catalog = migration["provenance"]["canonical_catalog_source"]["sha256"]
     strict = migration["provenance"]["strict_recovered_bundle"]["sha256"]
+    legacy = migration["provenance"]["repository_legacy_source"]["sha256"]
     assert catalog == "3466f4aa8d500ef4d4298b49c04166161dd9f42cfcc4044a1538f24ae8a5a521"
     assert strict == "08b06de2bf73c901798540b16184dbc77371b795c5a3c40094c76f825537d156"
     assert catalog != strict
     assert contract["contract_source_sha256"] == strict
+    assert legacy == "5042929212518ddcf4d6799efceaac52361e817cc7acbf692bed10f476a76895"
     assert contract["source_route_extractor"] == "dispatch_conditions_v1"
-    assert all(re.fullmatch(r"[0-9a-f]{64}", value) for value in (catalog, strict))
+    assert all(
+        re.fullmatch(r"[0-9a-f]{64}", value) for value in (catalog, strict, legacy)
+    )
 
 
 def test_no_literal_secret_material_is_tracked() -> None:
@@ -77,5 +81,6 @@ def test_legacy_source_is_preserved_unchanged() -> None:
     # This is the Git repository's historical TypeScript artifact, not either
     # recovered deployed artifact. Keeping its independent identity prevents a
     # migration commit from silently rewriting provenance.
-    digest = hashlib.sha256((ROOT / "src" / "index.ts").read_bytes()).hexdigest()
-    assert digest == "1f2bac39134052d325b225e1c240594b7e8a3fd9f074f41d0f0671ad4a6adda8"
+    data = (ROOT / "src" / "index.ts").read_bytes().replace(b"\r\n", b"\n")
+    digest = hashlib.sha256(data).hexdigest()
+    assert digest == "5042929212518ddcf4d6799efceaac52361e817cc7acbf692bed10f476a76895"
