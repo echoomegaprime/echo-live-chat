@@ -1,0 +1,78 @@
+{
+  "worker_name": "echo-live-chat",
+  "replacement": {
+    "service_dir": "/opt/echo-live-chat",
+    "unit": "echo-live-chat.service",
+    "port": 8465,
+    "staging_port": 8466,
+    "public_url": "https://live-chat.echo-op.com",
+    "runtime": "FastAPI/PostgreSQL/systemd",
+    "service_identity": "dedicated echo-live-chat OS and peer-authenticated PostgreSQL roles",
+    "write_credential": "dedicated value-only systemd credentials; no sovereign key reuse"
+  },
+  "provenance": {
+    "canonical_catalog_source": {
+      "sha256": "3466f4aa8d500ef4d4298b49c04166161dd9f42cfcc4044a1538f24ae8a5a521",
+      "relationship": "Canonical inventory identity; the historical rescue path is no longer mounted."
+    },
+    "strict_recovered_bundle": {
+      "sha256": "08b06de2bf73c901798540b16184dbc77371b795c5a3c40094c76f825537d156",
+      "source_path": "/mnt/cf_kv_r2/workers/echo-live-chat/source/index.js",
+      "relationship": "Byte-pinned recovered executable used for structural route attestation."
+    },
+    "repository_legacy_source": {
+      "sha256": "5042929212518ddcf4d6799efceaac52361e817cc7acbf692bed10f476a76895",
+      "source_path": "src/index.ts",
+      "relationship": "Git-normalized historical TypeScript source preserved independently from both recovered deployed identities."
+    }
+  },
+  "runtime": {
+    "service_dir": "/opt/echo-live-chat",
+    "api_unit": "echo-live-chat.service",
+    "schedule_unit": "echo-live-chat-maintenance.timer",
+    "bind_host": "127.0.0.1",
+    "port": 8465,
+    "staging_port": 8466,
+    "public_url": "https://live-chat.echo-op.com"
+  },
+  "routes": {
+    "source_count": 37,
+    "target_count": 37,
+    "tested_count": 37,
+    "coverage": 1.0,
+    "contract_path": "evidence/route_contract.json"
+  },
+  "bindings": {
+    "DB": "PostgreSQL schema cf_echo_live_chat with tenant-scoped parameterized queries",
+    "CACHE": "PostgreSQL-backed idempotency, session, and rate-limit state",
+    "ANALYTICS": "PostgreSQL daily aggregates plus value-free structured service logs",
+    "ECHO_API_KEY": "dedicated admin bearer credential loaded from systemd credentials",
+    "STRIPE_SECRET_KEY": "optional Stripe API credential loaded from a dedicated systemd credential; webhook signing uses a separate value-only credential",
+    "ENGINE_RUNTIME": "bounded private service adapter with fail-closed timeout",
+    "SHARED_BRAIN": "Sentinel-compatible bounded private service adapter with graceful degradation"
+  },
+  "scheduled_handler": {
+    "replacement": "echo-live-chat-maintenance.timer",
+    "jobs": ["rollup_analytics", "expire_rate_windows", "close_stale_sessions"],
+    "single_flight": "PostgreSQL advisory lock"
+  },
+  "state_recovery": {
+    "catalog_d1_size_bytes": 172032,
+    "indexed_application_table_count": 11,
+    "indexed_sqlite_internal_table_count": 1,
+    "indexed_empty_application_exports": 10,
+    "indexed_nonempty_application_exports": 1,
+    "recovered_payload_rows": 1,
+    "policy": "Preserve all eleven rescue-pipeline TEXT tables immutably as legacy_*_text_v1, create a typed runtime schema, and import the one recovered widget row without inventing customer content.",
+    "delta": "FORGE already contained the eleven D1 exports as nullable TEXT staging tables: ten empty and one widgets row. The migration renames them to legacy_*_text_v1, revokes runtime access, imports the widget into the typed table, generates a new public widget key, and creates a clearly labeled structural parent because the recovered tenant_id is absent."
+  },
+  "deliberate_deltas": [
+    "Administrative and agent routes require a dedicated constant-time bearer credential.",
+    "Visitor routes use signed, tenant-bound visitor sessions rather than trusting client-supplied tenant identifiers.",
+    "The Stripe webhook fails closed unless its dedicated signing credential is provisioned.",
+    "CORS is restricted to explicitly configured widget origins; wildcard credentialed CORS is forbidden.",
+    "Cloudflare service bindings are replaced by bounded loopback/private-cluster HTTP adapters.",
+    "The Worker scheduled handler is replaced by a hardened systemd timer with a single-flight database lock.",
+    "The recovered D1 widget is imported from the preserved staging row; no customer content is synthesized."
+  ]
+}

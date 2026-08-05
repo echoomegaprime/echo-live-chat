@@ -1,0 +1,25 @@
+[Unit]
+Description=Echo Live Chat scheduled maintenance
+After=postgresql.service
+
+[Service]
+Type=oneshot
+User=echo-live-chat
+Group=echo-live-chat
+WorkingDirectory=/opt/echo-live-chat/current
+Environment="ECHO_LIVE_CHAT_DATABASE_DSN=dbname=echo user=echo-live-chat"
+ExecStart=/opt/echo-live-chat/current/.venv/bin/python live_chat_core.py maintenance
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=tmpfs
+BindReadOnlyPaths=/opt/echo-live-chat/current:/opt/echo-live-chat/current
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=true
+MemoryMax=192M
+TasksMax=48
