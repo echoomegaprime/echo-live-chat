@@ -21,7 +21,7 @@ STRIPE_WEBHOOK_SECRET_FILE="$CREDENTIAL_DIR/stripe-webhook-secret"
 RUNTIME_MOUNT=/opt/echo-live-chat-runtime
 STAGING_MOUNT=/opt/echo-live-chat-staging
 TEST_PYTHON="${LIVE_CHAT_TEST_PYTHON:-/home/forge/echo-worker-server/venv/bin/python}"
-RELEASE_ID="$(date -u +%Y%m%dT%H%M%S%NZ)-$(git -C "$SRC_DIR" rev-parse --short HEAD 2>/dev/null || echo source)"
+RELEASE_ID="$(date -u +%Y%m%dT%H%M%S%NZ)-$(git -c safe.directory="$SRC_DIR" -C "$SRC_DIR" rev-parse --short HEAD 2>/dev/null || echo source)"
 RELEASE_DIR="$RELEASES_DIR/$RELEASE_ID"
 OLD_TARGET=""
 STAGING_UNIT=""
@@ -124,10 +124,10 @@ flock -n 9 || { echo "another Echo Live Chat deploy holds the release lock" >&2;
 for required in app.py live_chat_core.py schema.sql requirements.txt migration_contract.json evidence/route_contract.json smoke_live.py register_public_route.py; do
   [ -f "$SRC_DIR/$required" ] || { echo "missing required release file: $required" >&2; exit 2; }
 done
-git -C "$SRC_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "release source is not a Git worktree" >&2; exit 2; }
-git -C "$SRC_DIR" diff --quiet || { echo "release source has unstaged tracked changes" >&2; exit 2; }
-git -C "$SRC_DIR" diff --cached --quiet || { echo "release source has staged uncommitted changes" >&2; exit 2; }
-[ -z "$(git -C "$SRC_DIR" ls-files --others --exclude-standard)" ] || { echo "release source has untracked files" >&2; exit 2; }
+git -c safe.directory="$SRC_DIR" -C "$SRC_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "release source is not a Git worktree" >&2; exit 2; }
+git -c safe.directory="$SRC_DIR" -C "$SRC_DIR" diff --quiet || { echo "release source has unstaged tracked changes" >&2; exit 2; }
+git -c safe.directory="$SRC_DIR" -C "$SRC_DIR" diff --cached --quiet || { echo "release source has staged uncommitted changes" >&2; exit 2; }
+[ -z "$(git -c safe.directory="$SRC_DIR" -C "$SRC_DIR" ls-files --others --exclude-standard)" ] || { echo "release source has untracked files" >&2; exit 2; }
 [ -r "$STRICT_SOURCE" ] || { echo "strict recovered source is unavailable" >&2; exit 2; }
 [ -x "$TEST_PYTHON" ] || { echo "verified test runner is unavailable" >&2; exit 2; }
 if ss -ltnH "sport = :$STAGING_PORT" | grep -q .; then
@@ -146,7 +146,7 @@ INVENTORY_SHA="$(sudo -u postgres psql -d echo -Atc "SELECT btrim(source_sha256)
 
 install -d -m 0755 "$BASE_DIR" "$RELEASES_DIR"
 mkdir -m 0755 "$RELEASE_DIR"
-git -C "$SRC_DIR" archive --format=tar HEAD | tar -xf - -C "$RELEASE_DIR"
+git -c safe.directory="$SRC_DIR" -C "$SRC_DIR" archive --format=tar HEAD | tar -xf - -C "$RELEASE_DIR"
 chmod -R u=rwX,go=rX "$RELEASE_DIR"
 python3 -c "import glob,py_compile; [py_compile.compile(path,doraise=True) for path in glob.glob('$RELEASE_DIR/*.py')]"
 "$TEST_PYTHON" -m pytest -q --confcutdir="$RELEASE_DIR" "$RELEASE_DIR/tests"
