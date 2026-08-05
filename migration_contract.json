@@ -1,7 +1,7 @@
 {
   "worker_name": "echo-live-chat",
   "replacement": {
-    "service_dir": "/home/forge/echo-live-chat",
+    "service_dir": "/opt/echo-live-chat",
     "unit": "echo-live-chat.service",
     "port": 8465,
     "staging_port": 8466,
@@ -27,7 +27,7 @@
     }
   },
   "runtime": {
-    "service_dir": "/home/forge/echo-live-chat",
+    "service_dir": "/opt/echo-live-chat",
     "api_unit": "echo-live-chat.service",
     "schedule_unit": "echo-live-chat-maintenance.timer",
     "bind_host": "127.0.0.1",

@@ -10,9 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_systemd_release_attestation_shape() -> None:
     unit = (ROOT / "systemd" / "echo-live-chat.service").read_text()
     assert "User=echo-live-chat" in unit
-    assert "WorkingDirectory=/opt/echo-live-chat-runtime" in unit
-    assert "BindReadOnlyPaths=/home/forge/echo-live-chat/current:/opt/echo-live-chat-runtime" in unit
-    assert "ExecStart=/opt/echo-live-chat-runtime/.venv/bin/python -m uvicorn app:app" in unit
+    assert "WorkingDirectory=/opt/echo-live-chat/current" in unit
+    assert "BindReadOnlyPaths=/opt/echo-live-chat/current:/opt/echo-live-chat/current" in unit
+    assert "ExecStart=/opt/echo-live-chat/current/.venv/bin/python -m uvicorn app:app" in unit
     assert "ExecStart=/usr/bin/env" not in unit
     assert "--host 127.0.0.1 --port 8465" in unit
     assert "NoNewPrivileges=true" in unit
@@ -54,7 +54,15 @@ def test_deploy_is_staging_first_and_has_real_rollback() -> None:
         'git -c safe.directory="$SRC_DIR" -C "$SRC_DIR" diff --quiet',
         'git -c safe.directory="$SRC_DIR" -C "$SRC_DIR" archive --format=tar HEAD',
         '(cd "$RELEASE_DIR" && "$TEST_PYTHON" -m pytest',
-        'ln -sfn /usr/bin/python3 "$PROD_MOUNT/.venv/bin/python"',
+        'VERIFY_CURRENT_CREATED=1',
+        'production port is occupied without a verified legacy release',
+        'systemctl is-active --quiet "$UNIT"',
+        'legacy production health is red',
+        'run_production_smokes "$LEGACY_CURRENT_LINK"',
+        'PREVIOUS_TIMER_ACTIVE=1',
+        'PREVIOUS_TIMER_ENABLED=1',
+        'systemctl enable "$TIMER"',
+        'systemctl start "$TIMER"',
         'wait_for_health "$PROD_PORT" || return 1',
         '--admin-token-file "$ADMIN_TOKEN_FILE"',
         "PUBLIC_BASE=https://live-chat.echo-op.com",
@@ -74,7 +82,7 @@ def test_schema_and_contract_names_are_consistent() -> None:
     deploy = (ROOT / "deploy_echo_live_chat.sh").read_text()
     assert "CREATE SCHEMA IF NOT EXISTS cf_echo_live_chat" in schema
     assert "cf_echo_live_chat.migration_receipts" in schema
-    assert contract["replacement"]["service_dir"] == "/home/forge/echo-live-chat"
+    assert contract["replacement"]["service_dir"] == "/opt/echo-live-chat"
     assert contract["runtime"]["api_unit"] == "echo-live-chat.service"
     assert "cf_echo_live_chat.migration_receipts" in deploy
     for column in ("candidate_release", "active_release", "event_name", "recorded_at"):

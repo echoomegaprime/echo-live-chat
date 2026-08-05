@@ -3,9 +3,10 @@
 set -euo pipefail
 
 SRC_DIR="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
-BASE_DIR=/home/forge/echo-live-chat
+BASE_DIR=/opt/echo-live-chat
 RELEASES_DIR="$BASE_DIR/releases"
 CURRENT_LINK="$BASE_DIR/current"
+LEGACY_CURRENT_LINK=/home/forge/echo-live-chat/current
 UNIT=echo-live-chat.service
 TIMER=echo-live-chat-maintenance.timer
 PROD_PORT=8465
@@ -18,14 +19,17 @@ ADMIN_TOKEN_FILE="$CREDENTIAL_DIR/admin-token"
 SESSION_KEY_FILE="$CREDENTIAL_DIR/session-key"
 STRIPE_API_SECRET_FILE="$CREDENTIAL_DIR/stripe-api-secret"
 STRIPE_WEBHOOK_SECRET_FILE="$CREDENTIAL_DIR/stripe-webhook-secret"
-RUNTIME_MOUNT=/opt/echo-live-chat-runtime
 STAGING_MOUNT=/opt/echo-live-chat-staging
-PROD_MOUNT=/opt/echo-live-chat-runtime
 TEST_PYTHON="${LIVE_CHAT_TEST_PYTHON:-/home/forge/echo-worker-server/venv/bin/python}"
 RELEASE_ID="$(date -u +%Y%m%dT%H%M%S%NZ)-$(git -c safe.directory="$SRC_DIR" -C "$SRC_DIR" rev-parse --short HEAD 2>/dev/null || echo source)"
 RELEASE_DIR="$RELEASES_DIR/$RELEASE_ID"
 OLD_TARGET=""
+LEGACY_TARGET=""
+PREVIOUS_UNIT_ACTIVE=0
+PREVIOUS_TIMER_ACTIVE=0
+PREVIOUS_TIMER_ENABLED=0
 STAGING_UNIT=""
+VERIFY_CURRENT_CREATED=0
 UNIT_BACKUP_DIR="$BASE_DIR/unit-backups/$RELEASE_ID"
 EXPECTED_CATALOG_SHA=3466f4aa8d500ef4d4298b49c04166161dd9f42cfcc4044a1538f24ae8a5a521
 EXPECTED_STRICT_SHA=08b06de2bf73c901798540b16184dbc77371b795c5a3c40094c76f825537d156
@@ -34,6 +38,9 @@ STRICT_SOURCE=/mnt/cf_kv_r2/workers/echo-live-chat/source/index.js
 log() { printf '[live-chat-deploy %s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 
 cleanup() {
+  if [ "$VERIFY_CURRENT_CREATED" = 1 ]; then
+    rm -f "$CURRENT_LINK"
+  fi
   if [ -n "$STAGING_UNIT" ]; then
     systemctl stop "$STAGING_UNIT.service" >/dev/null 2>&1 || true
     systemctl reset-failed "$STAGING_UNIT.service" >/dev/null 2>&1 || true
@@ -51,9 +58,10 @@ wait_for_health() {
 }
 
 run_production_smokes() {
-  python3 "$CURRENT_LINK/smoke_live.py" --base "http://127.0.0.1:$PROD_PORT" \
+  local smoke_root="${1:-$CURRENT_LINK}"
+  python3 "$smoke_root/smoke_live.py" --base "http://127.0.0.1:$PROD_PORT" \
     --admin-token-file "$ADMIN_TOKEN_FILE" --session-key-file "$SESSION_KEY_FILE" || return 1
-  python3 "$CURRENT_LINK/smoke_live.py" --base "$PUBLIC_BASE" \
+  python3 "$smoke_root/smoke_live.py" --base "$PUBLIC_BASE" \
     --admin-token-file "$ADMIN_TOKEN_FILE" --session-key-file "$SESSION_KEY_FILE" || return 1
 }
 
@@ -101,6 +109,18 @@ rollback_release() {
     rm -f "$CURRENT_LINK" "$BASE_DIR/app.py"
     restore_units
     systemctl daemon-reload
+    if [ "$PREVIOUS_UNIT_ACTIVE" = 1 ] && [ -n "$LEGACY_TARGET" ]; then
+      systemctl enable --now "$UNIT" >/dev/null || return 1
+      wait_for_health "$PROD_PORT" || return 1
+      run_production_smokes "$LEGACY_CURRENT_LINK" || return 1
+      record_receipt rollback_smoke "$LEGACY_TARGET" || return 1
+    fi
+    if [ "$PREVIOUS_TIMER_ENABLED" = 1 ]; then
+      systemctl enable "$TIMER" >/dev/null || return 1
+    fi
+    if [ "$PREVIOUS_TIMER_ACTIVE" = 1 ]; then
+      systemctl start "$TIMER" || return 1
+    fi
     return 0
   fi
   case "$OLD_TARGET" in "$RELEASES_DIR"/*) ;; *) return 1 ;; esac
@@ -136,8 +156,13 @@ if ss -ltnH "sport = :$STAGING_PORT" | grep -q .; then
   exit 2
 fi
 if [ ! -L "$CURRENT_LINK" ] && ss -ltnH "sport = :$PROD_PORT" | grep -q .; then
-  echo "production port is occupied without an active release" >&2
-  exit 2
+  legacy_preflight_target="$(readlink -f "$LEGACY_CURRENT_LINK" 2>/dev/null || true)"
+  case "$legacy_preflight_target" in
+    /home/forge/echo-live-chat/releases/*) ;;
+    *) echo "production port is occupied without a verified legacy release" >&2; exit 2 ;;
+  esac
+  systemctl is-active --quiet "$UNIT" || { echo "legacy production unit is not active" >&2; exit 2; }
+  wait_for_health "$PROD_PORT" || { echo "legacy production health is red" >&2; exit 2; }
 fi
 
 ACTUAL_STRICT_SHA="$(sha256sum "$STRICT_SOURCE" | awk '{print $1}')"
@@ -155,14 +180,19 @@ python3 -m venv "$RELEASE_DIR/.venv"
 PIP_CACHE_DIR="$BASE_DIR/pip-cache" "$RELEASE_DIR/.venv/bin/python" -m pip install \
   --disable-pip-version-check --no-input --only-binary=:all: \
   --requirement "$RELEASE_DIR/requirements.txt" >/dev/null
-# systemd verifies ExecStart before it creates the service's read-only bind
-# namespace. Keep only an executable mount anchor on the host; at runtime the
-# active release is mounted over this directory and supplies the real venv.
-install -d -o root -g root -m 0755 "$PROD_MOUNT/.venv/bin"
-ln -sfn /usr/bin/python3 "$PROD_MOUNT/.venv/bin/python"
+# On the first /opt deployment, expose the candidate only long enough for
+# systemd's direct-ExecStart verifier. No unit points here until staging passes.
+if [ ! -L "$CURRENT_LINK" ]; then
+  ln -s "releases/$RELEASE_ID" "$CURRENT_LINK"
+  VERIFY_CURRENT_CREATED=1
+fi
 systemd-analyze verify "$RELEASE_DIR/systemd/echo-live-chat.service" \
   "$RELEASE_DIR/systemd/echo-live-chat-maintenance.service" \
   "$RELEASE_DIR/systemd/echo-live-chat-maintenance.timer"
+if [ "$VERIFY_CURRENT_CREATED" = 1 ]; then
+  rm -f "$CURRENT_LINK"
+  VERIFY_CURRENT_CREATED=0
+fi
 
 if ! getent passwd "$RUN_USER" >/dev/null; then
   useradd --system --home-dir /nonexistent --no-create-home --shell /usr/sbin/nologin --user-group "$RUN_USER"
@@ -233,7 +263,14 @@ systemctl reset-failed "$STAGING_UNIT.service" >/dev/null 2>&1 || true
 STAGING_UNIT=""
 log "staging smoke GREEN"
 
-if [ -L "$CURRENT_LINK" ]; then OLD_TARGET="$(readlink -f "$CURRENT_LINK")"; fi
+if systemctl is-active --quiet "$UNIT"; then PREVIOUS_UNIT_ACTIVE=1; fi
+if systemctl is-active --quiet "$TIMER"; then PREVIOUS_TIMER_ACTIVE=1; fi
+if systemctl is-enabled --quiet "$TIMER"; then PREVIOUS_TIMER_ENABLED=1; fi
+if [ -L "$CURRENT_LINK" ]; then
+  OLD_TARGET="$(readlink -f "$CURRENT_LINK")"
+elif [ -L "$LEGACY_CURRENT_LINK" ]; then
+  LEGACY_TARGET="$(readlink -f "$LEGACY_CURRENT_LINK")"
+fi
 backup_units
 install -m 0644 "$RELEASE_DIR/systemd/echo-live-chat.service" "/etc/systemd/system/$UNIT"
 install -m 0644 "$RELEASE_DIR/systemd/echo-live-chat-maintenance.service" /etc/systemd/system/echo-live-chat-maintenance.service

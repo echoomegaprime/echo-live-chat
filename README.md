@@ -16,8 +16,8 @@ creates a labeled structural parent because the rescued row has no tenant id.
 - Public browser boundary at `https://live-chat.echo-op.com`
 - PostgreSQL schema `cf_echo_live_chat`
 - Dedicated `echo-live-chat` operating-system and database roles
-- Immutable releases under `/home/forge/echo-live-chat/releases`
-- A read-only `current` release bind mounted into `/opt/echo-live-chat-runtime`
+- Immutable releases under `/opt/echo-live-chat/releases`
+- A read-only self-bind of `/opt/echo-live-chat/current`, matching the canonical migration auditor contract
 - Five-minute, single-flight maintenance through a systemd timer
 - Secrets loaded from root-owned systemd credentials; Stripe API and webhook signing values are isolated and none are stored here
 
@@ -78,12 +78,20 @@ that recovery path without leaving the failed candidate active.
 
 After deployment, run the canonical FORGE migration auditor and require the
 `echo-live-chat` row to be `migrated`, `healthy`, and `37/37/37` with coverage
-`1.0`. Do not infer completion from this README or from a local test result.
+`1.0`:
+
+```bash
+sudo python3 /home/forge/cf-migration-audit/audit_rollup.py \
+  --release-root /opt/echo-live-chat
+```
+
+Do not infer completion from this README or from a local test result.
 
 ## Provenance and state
 
 `migration_contract.json` records the canonical inventory digest and the
 strict recovered-bundle digest as distinct artifacts. The immutable rescue
-index records ten empty application exports and one non-empty widget export;
-the N-drive row payload is currently unavailable. The schema is complete, but
-the runtime deliberately does not fabricate the missing historical widget.
+index records ten empty application exports and one non-empty widget export.
+The preserved FORGE rescue table supplied that widget row; the typed migration
+imports it with a labeled structural tenant and generates only a replacement
+public key. It does not fabricate customer content.

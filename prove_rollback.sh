@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SRC_DIR="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
-BASE_DIR=/home/forge/echo-live-chat
+BASE_DIR=/opt/echo-live-chat
 CURRENT_LINK="$BASE_DIR/current"
 BEFORE="$(readlink -f "$CURRENT_LINK")"
 set +e

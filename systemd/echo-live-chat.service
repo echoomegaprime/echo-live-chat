@@ -7,7 +7,7 @@ Wants=network-online.target
 Type=simple
 User=echo-live-chat
 Group=echo-live-chat
-WorkingDirectory=/opt/echo-live-chat-runtime
+WorkingDirectory=/opt/echo-live-chat/current
 Environment="ECHO_LIVE_CHAT_DATABASE_DSN=dbname=echo user=echo-live-chat"
 Environment=ECHO_LIVE_CHAT_ADMIN_TOKEN_FILE=%d/admin_token
 Environment=ECHO_LIVE_CHAT_SESSION_KEY_FILE=%d/session_key
@@ -24,7 +24,7 @@ LoadCredential=admin_token:/etc/echo/credentials/echo-live-chat/admin-token
 LoadCredential=session_key:/etc/echo/credentials/echo-live-chat/session-key
 LoadCredential=stripe_api_secret:/etc/echo/credentials/echo-live-chat/stripe-api-secret
 LoadCredential=stripe_webhook_secret:/etc/echo/credentials/echo-live-chat/stripe-webhook-secret
-ExecStart=/opt/echo-live-chat-runtime/.venv/bin/python -m uvicorn app:app --host 127.0.0.1 --port 8465 --log-level info --no-access-log
+ExecStart=/opt/echo-live-chat/current/.venv/bin/python -m uvicorn app:app --host 127.0.0.1 --port 8465 --log-level info --no-access-log
 Restart=on-failure
 RestartSec=5
 TimeoutStartSec=30
@@ -34,7 +34,7 @@ PrivateTmp=true
 PrivateDevices=true
 ProtectSystem=strict
 ProtectHome=tmpfs
-BindReadOnlyPaths=/home/forge/echo-live-chat/current:/opt/echo-live-chat-runtime
+BindReadOnlyPaths=/opt/echo-live-chat/current:/opt/echo-live-chat/current
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
