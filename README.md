@@ -4,6 +4,12 @@ Echo Live Chat is ECHO's tenant-safe, embeddable support-chat runtime. This
 repository preserves the original Worker contract while moving execution and
 state to the private FORGE cluster.
 
+FORGE's rescue pipeline had already staged all eleven D1 application exports
+as nullable text tables. Ten are empty and `widgets` contains one recovered
+row. The schema gate preserves those tables under `legacy_*_text_v1`, revokes
+runtime access to them, imports the widget into the typed runtime table, and
+creates a labeled structural parent because the rescued row has no tenant id.
+
 ## Runtime
 
 - FastAPI on loopback port `8465`

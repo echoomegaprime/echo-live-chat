@@ -84,3 +84,12 @@ def test_legacy_source_is_preserved_unchanged() -> None:
     data = (ROOT / "src" / "index.ts").read_bytes().replace(b"\r\n", b"\n")
     digest = hashlib.sha256(data).hexdigest()
     assert digest == "5042929212518ddcf4d6799efceaac52361e817cc7acbf692bed10f476a76895"
+
+
+def test_recovered_state_contract_preserves_the_single_widget() -> None:
+    migration = json.loads((ROOT / "migration_contract.json").read_text())
+    recovery = migration["state_recovery"]
+    assert recovery["indexed_empty_application_exports"] == 10
+    assert recovery["indexed_nonempty_application_exports"] == 1
+    assert recovery["recovered_payload_rows"] == 1
+    assert "legacy_*_text_v1" in recovery["policy"]

@@ -1,4 +1,35 @@
 CREATE SCHEMA IF NOT EXISTS cf_echo_live_chat;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- The rescue pipeline pre-staged D1 exports as nullable TEXT tables. Preserve
+-- those bytes under immutable legacy names before creating the typed runtime.
+DO $$
+DECLARE
+    table_name TEXT;
+    tables CONSTANT TEXT[] := ARRAY[
+        'activity_log','agents','analytics_daily','canned_responses',
+        'conversations','messages','tags','tenants','triggers','visitors','widgets'
+    ];
+BEGIN
+    IF to_regclass('cf_echo_live_chat.tenants') IS NOT NULL
+       AND NOT EXISTS (
+           SELECT 1 FROM pg_constraint
+           WHERE conrelid='cf_echo_live_chat.tenants'::regclass AND contype='p'
+       ) THEN
+        FOREACH table_name IN ARRAY tables LOOP
+            IF to_regclass(format('cf_echo_live_chat.%I', table_name)) IS NOT NULL THEN
+                IF to_regclass(format('cf_echo_live_chat.legacy_%s_text_v1', table_name)) IS NOT NULL THEN
+                    RAISE EXCEPTION 'legacy rescue table already exists for %', table_name;
+                END IF;
+                EXECUTE format(
+                    'ALTER TABLE cf_echo_live_chat.%I RENAME TO %I',
+                    table_name,
+                    'legacy_' || table_name || '_text_v1'
+                );
+            END IF;
+        END LOOP;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS cf_echo_live_chat.tenants (
     id TEXT PRIMARY KEY,
@@ -55,6 +86,63 @@ CREATE TABLE IF NOT EXISTS cf_echo_live_chat.widgets (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (tenant_id, name)
 );
+
+-- Import the one recovered widget row without discarding or fabricating its
+-- content. Its D1 tenant_id is absent, so a clearly labeled structural parent
+-- is created solely to satisfy ownership and foreign-key enforcement.
+DO $$
+BEGIN
+    IF to_regclass('cf_echo_live_chat.legacy_widgets_text_v1') IS NOT NULL THEN
+        INSERT INTO cf_echo_live_chat.tenants(id,name,status)
+        SELECT DISTINCT
+            COALESCE(NULLIF(btrim(tenant_id),''), 'recovered-' || substr(md5(id),1,16)),
+            'Recovered Widget Tenant',
+            'active'
+        FROM cf_echo_live_chat.legacy_widgets_text_v1
+        WHERE id IS NOT NULL AND btrim(id) <> ''
+        ON CONFLICT (id) DO NOTHING;
+
+        INSERT INTO cf_echo_live_chat.widgets(
+            id,tenant_id,name,public_key,position,primary_color,greeting,
+            offline_message,collect_email,collect_name,show_branding,
+            auto_open_delay,allowed_domains,business_hours,ai_fallback,
+            ai_engine_id,ai_system_prompt,enabled,created_at,updated_at
+        )
+        SELECT
+            id,
+            COALESCE(NULLIF(btrim(tenant_id),''), 'recovered-' || substr(md5(id),1,16)),
+            COALESCE(NULLIF(name,''),'Default Widget'),
+            encode(gen_random_bytes(24),'hex'),
+            CASE WHEN position IN ('bottom-right','bottom-left') THEN position ELSE 'bottom-right' END,
+            COALESCE(NULLIF(primary_color,''),'#14b8a6'),
+            COALESCE(NULLIF(greeting,''),'Hi! How can we help you today?'),
+            COALESCE(NULLIF(offline_message,''),'We are currently offline. Leave a message and we will get back to you.'),
+            lower(COALESCE(collect_email,'true')) IN ('1','true','t','yes','on'),
+            lower(COALESCE(collect_name,'true')) IN ('1','true','t','yes','on'),
+            lower(COALESCE(show_branding,'true')) IN ('1','true','t','yes','on'),
+            CASE WHEN pg_input_is_valid(NULLIF(auto_open_delay,''),'integer')
+                 THEN greatest(0,least(120,auto_open_delay::integer)) ELSE 0 END,
+            CASE WHEN pg_input_is_valid(NULLIF(allowed_domains,''),'jsonb')
+                 THEN CASE WHEN jsonb_typeof(allowed_domains::jsonb)='array'
+                           THEN allowed_domains::jsonb ELSE '[]'::jsonb END
+                 ELSE '[]'::jsonb END,
+            CASE WHEN pg_input_is_valid(NULLIF(business_hours,''),'jsonb')
+                 THEN CASE WHEN jsonb_typeof(business_hours::jsonb)='object'
+                           THEN business_hours::jsonb ELSE '{}'::jsonb END
+                 ELSE '{}'::jsonb END,
+            lower(COALESCE(ai_fallback,'true')) IN ('1','true','t','yes','on'),
+            COALESCE(NULLIF(ai_engine_id,''),'GEN-01'),
+            NULLIF(ai_system_prompt,''),
+            true,
+            CASE WHEN pg_input_is_valid(NULLIF(created_at,''),'timestamptz')
+                 THEN created_at::timestamptz ELSE now() END,
+            CASE WHEN pg_input_is_valid(NULLIF(created_at,''),'timestamptz')
+                 THEN created_at::timestamptz ELSE now() END
+        FROM cf_echo_live_chat.legacy_widgets_text_v1
+        WHERE id IS NOT NULL AND btrim(id) <> ''
+        ON CONFLICT (id) DO NOTHING;
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS cf_echo_live_chat.visitors (
     id TEXT PRIMARY KEY,
@@ -248,5 +336,18 @@ GRANT USAGE ON SCHEMA cf_echo_live_chat TO "echo-live-chat";
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA cf_echo_live_chat TO "echo-live-chat";
 GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA cf_echo_live_chat TO "echo-live-chat";
 ALTER DEFAULT PRIVILEGES IN SCHEMA cf_echo_live_chat REVOKE ALL ON TABLES FROM PUBLIC;
+
+DO $$
+DECLARE
+    legacy_table REGCLASS;
+BEGIN
+    FOR legacy_table IN
+        SELECT c.oid::regclass
+        FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+        WHERE n.nspname='cf_echo_live_chat' AND c.relname LIKE 'legacy_%_text_v1'
+    LOOP
+        EXECUTE format('REVOKE ALL ON TABLE %s FROM "echo-live-chat"', legacy_table);
+    END LOOP;
+END $$;
 ALTER DEFAULT PRIVILEGES IN SCHEMA cf_echo_live_chat GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO "echo-live-chat";
 ALTER DEFAULT PRIVILEGES IN SCHEMA cf_echo_live_chat GRANT USAGE, SELECT ON SEQUENCES TO "echo-live-chat";

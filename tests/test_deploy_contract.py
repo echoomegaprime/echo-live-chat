@@ -56,6 +56,8 @@ def test_deploy_is_staging_first_and_has_real_rollback() -> None:
         '--admin-token-file "$ADMIN_TOKEN_FILE"',
         "PUBLIC_BASE=https://live-chat.echo-op.com",
         'smoke_live.py" --base "$PUBLIC_BASE"',
+        "recovered widget row-count mismatch",
+        "typed widget import identity mismatch",
     )
     for marker in required:
         assert marker in deploy
@@ -78,3 +80,7 @@ def test_schema_and_contract_names_are_consistent() -> None:
     assert "ADD COLUMN IF NOT EXISTS active_release" in schema
     assert "DROP CONSTRAINT IF EXISTS visitor_sessions_conversation_fk" in schema
     assert "IF existing_definition IS NULL" in schema
+    assert "legacy_widgets_text_v1" in schema
+    assert "Recovered Widget Tenant" in schema
+    assert "REVOKE ALL ON TABLE" in schema
+    assert "gen_random_bytes(24)" in schema

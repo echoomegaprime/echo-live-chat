@@ -168,6 +168,22 @@ fi
 role_safe="$(sudo -u postgres psql -d echo -Atc "SELECT rolcanlogin AND NOT rolsuper AND NOT rolcreatedb AND NOT rolcreaterole AND NOT rolreplication AND NOT rolbypassrls FROM pg_roles WHERE rolname='$DB_ROLE'")"
 [ "$role_safe" = t ] || { echo "database role privilege validation failed" >&2; exit 3; }
 sudo -u postgres psql --single-transaction -v ON_ERROR_STOP=1 -d echo < "$RELEASE_DIR/schema.sql" >/dev/null
+legacy_widget_rows="$(sudo -u postgres psql -d echo -Atc 'SELECT count(*) FROM cf_echo_live_chat.legacy_widgets_text_v1')"
+legacy_other_rows="$(sudo -u postgres psql -d echo -Atc "SELECT
+  (SELECT count(*) FROM cf_echo_live_chat.legacy_activity_log_text_v1)+
+  (SELECT count(*) FROM cf_echo_live_chat.legacy_agents_text_v1)+
+  (SELECT count(*) FROM cf_echo_live_chat.legacy_analytics_daily_text_v1)+
+  (SELECT count(*) FROM cf_echo_live_chat.legacy_canned_responses_text_v1)+
+  (SELECT count(*) FROM cf_echo_live_chat.legacy_conversations_text_v1)+
+  (SELECT count(*) FROM cf_echo_live_chat.legacy_messages_text_v1)+
+  (SELECT count(*) FROM cf_echo_live_chat.legacy_tags_text_v1)+
+  (SELECT count(*) FROM cf_echo_live_chat.legacy_tenants_text_v1)+
+  (SELECT count(*) FROM cf_echo_live_chat.legacy_triggers_text_v1)+
+  (SELECT count(*) FROM cf_echo_live_chat.legacy_visitors_text_v1)")"
+typed_widget_rows="$(sudo -u postgres psql -d echo -Atc 'SELECT count(*) FROM cf_echo_live_chat.legacy_widgets_text_v1 l JOIN cf_echo_live_chat.widgets w ON w.id=l.id')"
+[ "$legacy_widget_rows" = 1 ] || { echo "recovered widget row-count mismatch" >&2; exit 3; }
+[ "$legacy_other_rows" = 0 ] || { echo "recovered empty-table row-count mismatch" >&2; exit 3; }
+[ "$typed_widget_rows" = 1 ] || { echo "typed widget import identity mismatch" >&2; exit 3; }
 
 install -d -o root -g root -m 0700 "$CREDENTIAL_DIR"
 for pair in "$ADMIN_TOKEN_FILE:32" "$SESSION_KEY_FILE:48"; do

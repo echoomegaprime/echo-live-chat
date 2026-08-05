@@ -62,9 +62,9 @@
     "indexed_sqlite_internal_table_count": 1,
     "indexed_empty_application_exports": 10,
     "indexed_nonempty_application_exports": 1,
-    "recovered_payload_rows": "unavailable",
-    "policy": "Create the complete additive schema; do not fabricate historical visitor or widget records.",
-    "delta": "The immutable rescue index records ten empty application exports and one non-empty widgets export, but the N-drive payload files are not mounted and the strict recovered bundle contains no D1 rows. Runtime behavior is preserved; the missing historical widget payload is not reconstructed or invented."
+    "recovered_payload_rows": 1,
+    "policy": "Preserve all eleven rescue-pipeline TEXT tables immutably as legacy_*_text_v1, create a typed runtime schema, and import the one recovered widget row without inventing customer content.",
+    "delta": "FORGE already contained the eleven D1 exports as nullable TEXT staging tables: ten empty and one widgets row. The migration renames them to legacy_*_text_v1, revokes runtime access, imports the widget into the typed table, generates a new public widget key, and creates a clearly labeled structural parent because the recovered tenant_id is absent."
   },
   "deliberate_deltas": [
     "Administrative and agent routes require a dedicated constant-time bearer credential.",
@@ -73,6 +73,6 @@
     "CORS is restricted to explicitly configured widget origins; wildcard credentialed CORS is forbidden.",
     "Cloudflare service bindings are replaced by bounded loopback/private-cluster HTTP adapters.",
     "The Worker scheduled handler is replaced by a hardened systemd timer with a single-flight database lock.",
-    "No historical D1 payload is synthesized when the rescue artifact is absent."
+    "The recovered D1 widget is imported from the preserved staging row; no customer content is synthesized."
   ]
 }
