@@ -8,7 +8,7 @@ User=echo-live-chat
 Group=echo-live-chat
 WorkingDirectory=/opt/echo-live-chat-runtime
 Environment="ECHO_LIVE_CHAT_DATABASE_DSN=dbname=echo user=echo-live-chat"
-ExecStart=/usr/bin/env /opt/echo-live-chat-runtime/.venv/bin/python live_chat_core.py maintenance
+ExecStart=/opt/echo-live-chat-runtime/.venv/bin/python live_chat_core.py maintenance
 NoNewPrivileges=true
 PrivateTmp=true
 PrivateDevices=true

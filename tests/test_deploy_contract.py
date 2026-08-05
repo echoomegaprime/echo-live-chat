@@ -12,7 +12,8 @@ def test_systemd_release_attestation_shape() -> None:
     assert "User=echo-live-chat" in unit
     assert "WorkingDirectory=/opt/echo-live-chat-runtime" in unit
     assert "BindReadOnlyPaths=/home/forge/echo-live-chat/current:/opt/echo-live-chat-runtime" in unit
-    assert "/opt/echo-live-chat-runtime/.venv/bin/python -m uvicorn app:app" in unit
+    assert "ExecStart=/opt/echo-live-chat-runtime/.venv/bin/python -m uvicorn app:app" in unit
+    assert "ExecStart=/usr/bin/env" not in unit
     assert "--host 127.0.0.1 --port 8465" in unit
     assert "NoNewPrivileges=true" in unit
     assert "ProtectSystem=strict" in unit
@@ -32,6 +33,7 @@ def test_timer_is_single_native_schedule() -> None:
     assert "Persistent=true" in timer
     assert "Unit=echo-live-chat-maintenance.service" in timer
     assert "live_chat_core.py maintenance" in service
+    assert "ExecStart=/usr/bin/env" not in service
     assert "RestrictAddressFamilies=AF_UNIX" in service
 
 
