@@ -20,6 +20,7 @@ STRIPE_API_SECRET_FILE="$CREDENTIAL_DIR/stripe-api-secret"
 STRIPE_WEBHOOK_SECRET_FILE="$CREDENTIAL_DIR/stripe-webhook-secret"
 RUNTIME_MOUNT=/opt/echo-live-chat-runtime
 STAGING_MOUNT=/opt/echo-live-chat-staging
+PROD_MOUNT=/opt/echo-live-chat-runtime
 TEST_PYTHON="${LIVE_CHAT_TEST_PYTHON:-/home/forge/echo-worker-server/venv/bin/python}"
 RELEASE_ID="$(date -u +%Y%m%dT%H%M%S%NZ)-$(git -c safe.directory="$SRC_DIR" -C "$SRC_DIR" rev-parse --short HEAD 2>/dev/null || echo source)"
 RELEASE_DIR="$RELEASES_DIR/$RELEASE_ID"
@@ -154,6 +155,11 @@ python3 -m venv "$RELEASE_DIR/.venv"
 PIP_CACHE_DIR="$BASE_DIR/pip-cache" "$RELEASE_DIR/.venv/bin/python" -m pip install \
   --disable-pip-version-check --no-input --only-binary=:all: \
   --requirement "$RELEASE_DIR/requirements.txt" >/dev/null
+# systemd verifies ExecStart before it creates the service's read-only bind
+# namespace. Keep only an executable mount anchor on the host; at runtime the
+# active release is mounted over this directory and supplies the real venv.
+install -d -o root -g root -m 0755 "$PROD_MOUNT/.venv/bin"
+ln -sfn /usr/bin/python3 "$PROD_MOUNT/.venv/bin/python"
 systemd-analyze verify "$RELEASE_DIR/systemd/echo-live-chat.service" \
   "$RELEASE_DIR/systemd/echo-live-chat-maintenance.service" \
   "$RELEASE_DIR/systemd/echo-live-chat-maintenance.timer"
