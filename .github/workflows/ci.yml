@@ -1,0 +1,30 @@
+name: echo-live-chat-ci
+
+"on":
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out exact source
+        uses: actions/checkout@v4
+      - name: Configure Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt pytest
+      - name: Compile source and tests
+        run: python -m compileall -q app.py live_chat_core.py register_public_route.py tests
+      - name: Run the deterministic test suite
+        run: python -m pytest -q

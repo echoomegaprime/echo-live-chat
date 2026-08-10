@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "name": "echo-live-chat",
+  "capabilities": [
+    "echo.live_chat.init_session",
+    "echo.live_chat.send_message",
+    "echo.live_chat.admin_query"
+  ],
+  "entrypoints": ["scripts/certforge_journey.py"],
+  "data_classification": "private",
+  "network": "none"
+}

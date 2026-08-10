@@ -1,0 +1,23 @@
+name: Feature request
+description: Propose a new chat-runtime capability
+title: "feat: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Operator or tenant problem
+      description: What chat-runtime gap does this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Include the API contract, tenant-isolation, and session-scoping implications.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
