@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Awaitable, Callable, Mapping, TypeVar
 from urllib.parse import quote, urlparse
 
 import asyncpg
@@ -28,6 +28,12 @@ import httpx
 
 SERVICE = "echo-live-chat"
 VERSION = "3.0.0"
+# Maintenance DB calls: limited retries on transient statement timeouts (rnd-28).
+# Defaults match the R&D design; override via LIVE_CHAT_MAINTENANCE_* env vars.
+MAINTENANCE_MAX_ATTEMPTS = 3
+MAINTENANCE_RETRY_BACKOFF_SEC = 2.0
+DEFAULT_DB_COMMAND_TIMEOUT_SEC = 10.0
+T = TypeVar("T")
 PLANS: tuple[dict[str, Any], ...] = (
     {
         "id": "free",
@@ -325,6 +331,118 @@ def widget_origin_allowed(origin: str | None, domains: Any) -> bool:
     )
 
 
+def resolve_db_command_timeout() -> float:
+    """Return the asyncpg ``command_timeout`` in seconds (configurable, clamped)."""
+
+    raw = os.getenv(
+        "DB_COMMAND_TIMEOUT_SEC",
+        os.getenv(
+            "ECHO_LIVE_CHAT_DB_COMMAND_TIMEOUT",
+            str(DEFAULT_DB_COMMAND_TIMEOUT_SEC),
+        ),
+    )
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        value = DEFAULT_DB_COMMAND_TIMEOUT_SEC
+    return max(1.0, min(value, 120.0))
+
+
+def resolve_maintenance_retry_policy() -> tuple[int, float]:
+    """Return ``(max_attempts, backoff_sec)`` for maintenance DB retries."""
+
+    try:
+        attempts = int(
+            os.getenv(
+                "LIVE_CHAT_MAINTENANCE_MAX_ATTEMPTS",
+                str(MAINTENANCE_MAX_ATTEMPTS),
+            )
+        )
+    except (TypeError, ValueError):
+        attempts = MAINTENANCE_MAX_ATTEMPTS
+    try:
+        backoff = float(
+            os.getenv(
+                "LIVE_CHAT_MAINTENANCE_RETRY_BACKOFF_SEC",
+                str(MAINTENANCE_RETRY_BACKOFF_SEC),
+            )
+        )
+    except (TypeError, ValueError):
+        backoff = MAINTENANCE_RETRY_BACKOFF_SEC
+    return max(1, min(attempts, 10)), max(0.0, min(backoff, 30.0))
+
+
+def is_timeout_error(exc: BaseException) -> bool:
+    """Return True for transient statement/connection timeout failures."""
+
+    if isinstance(exc, TimeoutError):
+        return True
+    name = type(exc).__name__.lower()
+    return "timeout" in name
+
+
+async def call_with_timeout_retry(
+    factory: Callable[[], Awaitable[T]],
+    *,
+    max_attempts: int | None = None,
+    backoff_sec: float | None = None,
+    operation: str = "db_call",
+) -> T:
+    """Await ``factory()`` with limited retries on timeout errors.
+
+    Adapted from the Arcanum corpus ``async_retry_with_backoff`` /
+    ``_call_with_retries`` pattern (rank > 0.05). rnd-28 pins a simple
+    fixed backoff (default 3 attempts, 2s) rather than full exponential.
+    """
+
+    configured_attempts, configured_backoff = resolve_maintenance_retry_policy()
+    attempts = max(1, int(max_attempts if max_attempts is not None else configured_attempts))
+    delay = max(
+        0.0, float(backoff_sec if backoff_sec is not None else configured_backoff)
+    )
+    last_exc: BaseException | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return await factory()
+        except Exception as exc:
+            if not is_timeout_error(exc):
+                raise
+            last_exc = exc
+            if attempt >= attempts:
+                break
+            LOGGER.warning(
+                "maintenance db timeout; retrying",
+                extra={
+                    "event": "maintenance_retry",
+                    "dependency": "postgresql",
+                    "status": attempt,
+                    "duration_ms": int(delay * 1000),
+                    "request_id": operation,
+                },
+            )
+            await asyncio.sleep(delay)
+    assert last_exc is not None
+    raise last_exc
+
+
+async def execute_with_timeout_retry(
+    connection: asyncpg.Connection,
+    query: str,
+    *args: Any,
+    max_attempts: int | None = None,
+    backoff_sec: float | None = None,
+    operation: str = "maintenance_execute",
+) -> str:
+    """``connection.execute`` wrapped with timeout retry (rnd-28)."""
+
+    return await call_with_timeout_retry(
+        lambda: connection.execute(query, *args),
+        max_attempts=max_attempts,
+        backoff_sec=backoff_sec,
+        operation=operation,
+    )
+
+
 async def create_pool(settings: Settings) -> asyncpg.Pool:
     """Create and validate the PostgreSQL pool."""
 
@@ -332,7 +450,7 @@ async def create_pool(settings: Settings) -> asyncpg.Pool:
         dsn=settings.database_url,
         min_size=settings.pool_min,
         max_size=settings.pool_max,
-        command_timeout=10,
+        command_timeout=resolve_db_command_timeout(),
         server_settings={
             "application_name": SERVICE,
             "search_path": "cf_echo_live_chat,public",
@@ -662,11 +780,19 @@ async def process_stripe_event(pool: asyncpg.Pool, event: Mapping[str, Any]) -> 
 
 
 async def run_maintenance(pool: asyncpg.Pool) -> dict[str, int | bool]:
-    """Run scheduled rollups and expiry cleanup under a single-flight lock."""
+    """Run scheduled rollups and expiry cleanup under a single-flight lock.
+
+    Transient asyncpg/statement ``TimeoutError``s are retried (default: 3
+    attempts, 2s backoff) so oneshot maintenance does not fail closed on brief
+    database contention.
+    """
 
     async with pool.acquire() as connection:
-        locked = await connection.fetchval(
-            "SELECT pg_try_advisory_lock(hashtext('echo-live-chat-maintenance'))"
+        locked = await call_with_timeout_retry(
+            lambda: connection.fetchval(
+                "SELECT pg_try_advisory_lock(hashtext('echo-live-chat-maintenance'))"
+            ),
+            operation="advisory_lock",
         )
         if not locked:
             return {
@@ -676,7 +802,8 @@ async def run_maintenance(pool: asyncpg.Pool) -> dict[str, int | bool]:
                 "expired_rates": 0,
             }
         try:
-            result = await connection.execute(
+            result = await execute_with_timeout_retry(
+                connection,
                 """
                 INSERT INTO cf_echo_live_chat.analytics_daily
                   (tenant_id,date,conversations_started,conversations_resolved,messages_sent,messages_received,ai_responses,avg_satisfaction,unique_visitors)
@@ -712,24 +839,31 @@ async def run_maintenance(pool: asyncpg.Pool) -> dict[str, int | bool]:
                   ai_responses=EXCLUDED.ai_responses,
                   avg_satisfaction=EXCLUDED.avg_satisfaction,
                   unique_visitors=EXCLUDED.unique_visitors
-                """
+                """,
+                operation="analytics_rollup",
             )
             expired_sessions = int(
                 (
-                    await connection.execute(
-                        "DELETE FROM cf_echo_live_chat.visitor_sessions WHERE expires_at < now()"
+                    await execute_with_timeout_retry(
+                        connection,
+                        "DELETE FROM cf_echo_live_chat.visitor_sessions WHERE expires_at < now()",
+                        operation="expire_sessions",
                     )
                 ).split()[-1]
             )
             expired_rates = int(
                 (
-                    await connection.execute(
-                        "DELETE FROM cf_echo_live_chat.rate_limits WHERE expires_at < now()"
+                    await execute_with_timeout_retry(
+                        connection,
+                        "DELETE FROM cf_echo_live_chat.rate_limits WHERE expires_at < now()",
+                        operation="expire_rate_limits",
                     )
                 ).split()[-1]
             )
-            await connection.execute(
-                "DELETE FROM cf_echo_live_chat.activity_log WHERE created_at < now() - interval '30 days'"
+            await execute_with_timeout_retry(
+                connection,
+                "DELETE FROM cf_echo_live_chat.activity_log WHERE created_at < now() - interval '30 days'",
+                operation="expire_activity_log",
             )
             analytics_rows = int(result.split()[-1])
             return {
@@ -739,8 +873,10 @@ async def run_maintenance(pool: asyncpg.Pool) -> dict[str, int | bool]:
                 "expired_rates": expired_rates,
             }
         finally:
-            await connection.execute(
-                "SELECT pg_advisory_unlock(hashtext('echo-live-chat-maintenance'))"
+            await execute_with_timeout_retry(
+                connection,
+                "SELECT pg_advisory_unlock(hashtext('echo-live-chat-maintenance'))",
+                operation="advisory_unlock",
             )
 
 
