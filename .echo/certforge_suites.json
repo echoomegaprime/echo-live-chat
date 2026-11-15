@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "suites": [
+    {
+      "path": "tests/test_maintenance_retry.py",
+      "sys_paths": ["."]
+    }
+  ]
+}

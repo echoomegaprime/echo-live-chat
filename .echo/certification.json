@@ -1,4 +1,9 @@
 {
   "version": 1,
-  "journey": ["python3", "-B", "scripts/certforge_journey.py"]
+  "journey": ["python3", "-B", "scripts/certforge_journey.py"],
+  "rnd": {
+    "proposal_id": 28,
+    "policy_version": "certforge.rnd-staging.v1",
+    "journey": ["python3", "-B", "scripts/rnd_28_journey.py"]
+  }
 }
